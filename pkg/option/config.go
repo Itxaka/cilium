@@ -601,6 +601,12 @@ const (
 	// DisableCNPStatusUpdates disables updating of CNP NodeStatus in the CNP
 	// CRD.
 	DisableCNPStatusUpdates = "disable-cnp-status-updates"
+
+	// AllocatorEventChanSize is the size of the buffered channel on which
+	// identity-related events for this cilium-agent are received (deletion,
+	// creation, modification of global identities, deletion, creation of
+	// locally allocated identities).
+	AllocatorEventChanSize = "allocator-event-channel-size"
 )
 
 // Default string arguments
@@ -1200,6 +1206,12 @@ type DaemonConfig struct {
 	// DisableCNPStatusUpdates disables updating of CNP NodeStatus in the CNP
 	// CRD.
 	DisableCNPStatusUpdates bool
+
+	// AllocatorEventChanSize is the size of the buffered channel on which
+	// identity-related events for this cilium-agent are received (deletion,
+	// creation, modification of global identities, deletion, creation of
+	// locally allocated identities).
+	AllocatorEventChanSize int
 }
 
 var (
@@ -1797,6 +1809,7 @@ func (c *DaemonConfig) Populate() {
 	c.SelectiveRegeneration = viper.GetBool(SelectiveRegeneration)
 	c.SkipCRDCreation = viper.GetBool(SkipCRDCreation)
 	c.DisableCNPStatusUpdates = viper.GetBool(DisableCNPStatusUpdates)
+	c.AllocatorEventChanSize = viper.GetInt(AllocatorEventChanSize)
 }
 
 func sanitizeIntParam(paramName string, paramDefault int) int {

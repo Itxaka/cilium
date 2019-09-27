@@ -130,7 +130,7 @@ func InitIdentityAllocator(owner IdentityAllocatorOwner, client clientset.Interf
 
 	// Local identity cache can be created synchronously since it doesn't
 	// rely upon any external resources (e.g., external kvstore).
-	events := make(allocator.AllocatorEventChan, 1024)
+	events := make(allocator.AllocatorEventChan, option.Config.AllocatorEventChanSize)
 	localIdentities = newLocalIdentityCache(1, 0xFFFFFF, events)
 	close(localIdentityAllocatorInitialized)
 

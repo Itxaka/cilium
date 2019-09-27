@@ -852,6 +852,10 @@ func init() {
 	flags.Bool(option.DisableCNPStatusUpdates, false, "Do not send CNP NodeStatus updates to the Kubernetes api-server (recommended to run with `cnp-node-status-gc=false` in cilium-operator)")
 	option.BindEnv(option.DisableCNPStatusUpdates)
 
+	flags.Int(option.AllocatorEventChanSize, 1024, "size of buffered channel which handles identity events for this cilium-agent")
+	flags.MarkHidden(option.AllocatorEventChanSize)
+	option.BindEnv(option.AllocatorEventChanSize)
+
 	viper.BindPFlags(flags)
 }
 
