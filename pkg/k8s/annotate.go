@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"net"
 
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"github.com/cilium/cilium/pkg/annotation"
 	"github.com/cilium/cilium/pkg/cidr"
 	"github.com/cilium/cilium/pkg/controller"
@@ -111,4 +113,13 @@ func (k8sCli K8sClient) AnnotateNode(nodeName string, v4CIDR, v6CIDR *cidr.CIDR,
 		})
 
 	return nil
+}
+
+// GetSecrets returns the secrets found in the given namespace and name.
+func (k8sCli K8sClient) GetSecrets(ns, name string) (map[string][]byte, error) {
+	secrets, err := k8sCli.CoreV1().Secrets(ns).Get(name, v1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return secrets.Data, nil
 }
