@@ -54,7 +54,7 @@ var _ = Describe("K8sServicesTest", func() {
 		kubectl = helpers.CreateKubectl(helpers.K8s1VMName(), logger)
 		DeployCiliumAndDNS(kubectl)
 
-		ciliumPodK8s1, err = kubectl.GetCiliumPodOnNode(helpers.KubeSystemNamespace, helpers.K8s1)
+		ciliumPodK8s1, err = kubectl.GetCiliumPodOnNodeWithLabel(helpers.KubeSystemNamespace, helpers.K8s1)
 		Expect(err).Should(BeNil(), "Cannot get cilium pod on k8s1")
 	})
 
@@ -589,7 +589,7 @@ var _ = Describe("K8sServicesTest", func() {
 
 			By("Checking that policies were correctly imported into Cilium")
 
-			ciliumPodK8s1, err = kubectl.GetCiliumPodOnNode(helpers.KubeSystemNamespace, helpers.K8s1)
+			ciliumPodK8s1, err = kubectl.GetCiliumPodOnNodeWithLabel(helpers.KubeSystemNamespace, helpers.K8s1)
 			Expect(err).Should(BeNil(), "Cannot get cilium pod on k8s1")
 			res := kubectl.ExecPodCmd(helpers.KubeSystemNamespace, ciliumPodK8s1, policyCmd)
 			res.ExpectSuccess("Policy %s is not imported", policyCmd)
