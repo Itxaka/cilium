@@ -124,14 +124,14 @@ type L4Filter struct {
 	// POD and terminated by the L7 proxy. For ingress policy this specifies
 	// the server-side TLS parameters to be applied on the connections
 	// originated from a remote source and terminated by the L7 proxy.
-	TerminatingTLS api.TLSContext `json:"terminatingTLS,omitempty"`
+	TerminatingTLS *api.TLSContext `json:"terminatingTLS,omitempty"`
 	// OriginatingTLS is the TLS context for the connections originated by
 	// the L7 proxy.  For egress policy this specifies the client-side TLS
 	// parameters for the upstream connection originating from the L7 proxy
 	// to the remote destination. For ingress policy this specifies the
 	// client-side TLS parameters for the connection from the L7 proxy to
 	// the local POD.
-	OriginatingTLS api.TLSContext `json:"originatingTLS,omitempty"`
+	OriginatingTLS *api.TLSContext `json:"originatingTLS,omitempty"`
 	// L7Parser specifies the L7 protocol parser (optional). If specified as
 	// an empty string, then means that no L7 proxy redirect is performed.
 	L7Parser L7ParserType `json:"-"`

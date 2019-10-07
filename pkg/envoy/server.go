@@ -68,6 +68,10 @@ const (
 	EnvoyTimeout          = 300 * time.Second // must be smaller than endpoint.EndpointGenerationTimeout
 )
 
+type CertificateManager interface {
+	GetTLSContext(*api.TLSContext) (ca, public, private string, err error)
+}
+
 type Listener struct {
 	// must hold the XDSServer.mutex when accessing 'count'
 	count uint
@@ -124,6 +128,8 @@ type XDSServer struct {
 
 	// stopServer stops the xDS gRPC server.
 	stopServer context.CancelFunc
+
+	certManager CertificateManager
 }
 
 func getXDSPath(stateDir string) string {
@@ -131,7 +137,7 @@ func getXDSPath(stateDir string) string {
 }
 
 // StartXDSServer configures and starts the xDS GRPC server.
-func StartXDSServer(stateDir string) *XDSServer {
+func StartXDSServer(stateDir string, certManager CertificateManager) *XDSServer {
 	xdsPath := getXDSPath(stateDir)
 	accessLogPath := getAccessLogPath(stateDir)
 	denied403body := option.Config.HTTP403Message
@@ -331,6 +337,7 @@ func StartXDSServer(stateDir string) *XDSServer {
 		NetworkPolicyMutator:   npdsMutator,
 		networkPolicyEndpoints: make(map[string]logger.EndpointUpdater),
 		stopServer:             stopServer,
+		certManager:            certManager,
 	}
 }
 
@@ -650,7 +657,8 @@ func createBootstrap(filePath string, name, cluster, version string, xdsSock, eg
 	}
 }
 
-func getPortNetworkPolicyRule(sel policy.CachedSelector, l4 *policy.L4Filter, l7Rules *api.L7Rules) *cilium.PortNetworkPolicyRule {
+func getPortNetworkPolicyRule(sel policy.CachedSelector, l4 *policy.L4Filter,
+	l7Rules *api.L7Rules, certManager CertificateManager) *cilium.PortNetworkPolicyRule {
 	l7Parser := l4.L7Parser
 	// Optimize the policy if the endpoint selector is a wildcard by
 	// keeping remote policies list empty to match all remote policies.
@@ -674,19 +682,22 @@ func getPortNetworkPolicyRule(sel policy.CachedSelector, l4 *policy.L4Filter, l7
 		RemotePolicies: remotePolicies,
 	}
 
-	// TODO: Right now the secret data is inline in the 'Name'. MUST implement k8s secret access instead!
-	if l4.TerminatingTLS != api.EmptyTLSContext {
+	if l4.TerminatingTLS != nil {
+		// FIXME: We are ignoring errors here, should we?!
+		ca, public, private, _ := certManager.GetTLSContext(l4.TerminatingTLS)
 		r.DownstreamTlsContext = &cilium.TLSContext{
-			TrustedCa:        l4.TerminatingTLS.TrustedCA.Name,
-			CertificateChain: l4.TerminatingTLS.Certificate.Name,
-			PrivateKey:       l4.TerminatingTLS.PrivateKey.Name,
+			TrustedCa:        ca,
+			CertificateChain: public,
+			PrivateKey:       private,
 		}
 	}
-	if l4.OriginatingTLS != api.EmptyTLSContext {
+	if l4.OriginatingTLS != nil {
+		// FIXME: We are ignoring errors here, should we?!
+		ca, public, private, _ := certManager.GetTLSContext(l4.OriginatingTLS)
 		r.UpstreamTlsContext = &cilium.TLSContext{
-			TrustedCa:        l4.OriginatingTLS.TrustedCA.Name,
-			CertificateChain: l4.OriginatingTLS.Certificate.Name,
-			PrivateKey:       l4.OriginatingTLS.PrivateKey.Name,
+			TrustedCa:        ca,
+			CertificateChain: public,
+			PrivateKey:       private,
 		}
 	}
 
@@ -731,7 +742,7 @@ func getPortNetworkPolicyRule(sel policy.CachedSelector, l4 *policy.L4Filter, l7
 	return r
 }
 
-func getDirectionNetworkPolicy(l4Policy policy.L4PolicyMap, policyEnforced bool) []*cilium.PortNetworkPolicy {
+func getDirectionNetworkPolicy(l4Policy policy.L4PolicyMap, policyEnforced bool, certManager CertificateManager) []*cilium.PortNetworkPolicy {
 	if !policyEnforced {
 		// Return an allow-all policy.
 		return allowAllPortNetworkPolicy
@@ -760,7 +771,7 @@ func getDirectionNetworkPolicy(l4Policy policy.L4PolicyMap, policyEnforced bool)
 
 		allowAll := false
 		for sel, l7 := range l4.L7RulesPerEp {
-			rule := getPortNetworkPolicyRule(sel, l4, &l7)
+			rule := getPortNetworkPolicyRule(sel, l4, &l7, certManager)
 			if rule != nil {
 				if len(rule.RemotePolicies) == 0 && rule.L7 == nil {
 					// Got an allow-all rule, which would short-circuit all of
@@ -799,7 +810,7 @@ func getDirectionNetworkPolicy(l4Policy policy.L4PolicyMap, policyEnforced bool)
 
 // getNetworkPolicy converts a network policy into a cilium.NetworkPolicy.
 func getNetworkPolicy(name string, id identity.NumericIdentity, conntrackName string, policy *policy.L4Policy,
-	ingressPolicyEnforced, egressPolicyEnforced bool) *cilium.NetworkPolicy {
+	ingressPolicyEnforced, egressPolicyEnforced bool, certManager CertificateManager) *cilium.NetworkPolicy {
 	p := &cilium.NetworkPolicy{
 		Name:             name,
 		Policy:           uint64(id),
@@ -808,8 +819,8 @@ func getNetworkPolicy(name string, id identity.NumericIdentity, conntrackName st
 
 	// If no policy, deny all traffic. Otherwise, convert the policies for ingress and egress.
 	if policy != nil {
-		p.IngressPerPortPolicies = getDirectionNetworkPolicy(policy.Ingress, ingressPolicyEnforced)
-		p.EgressPerPortPolicies = getDirectionNetworkPolicy(policy.Egress, egressPolicyEnforced)
+		p.IngressPerPortPolicies = getDirectionNetworkPolicy(policy.Ingress, ingressPolicyEnforced, certManager)
+		p.EgressPerPortPolicies = getDirectionNetworkPolicy(policy.Egress, egressPolicyEnforced, certManager)
 	}
 
 	return p
@@ -836,7 +847,7 @@ func (s *XDSServer) UpdateNetworkPolicy(ep logger.EndpointUpdater, policy *polic
 			continue
 		}
 		networkPolicy := getNetworkPolicy(ip, ep.GetIdentity(), ep.ConntrackNameLocked(), policy,
-			ingressPolicyEnforced, egressPolicyEnforced)
+			ingressPolicyEnforced, egressPolicyEnforced, s.certManager)
 		err := networkPolicy.Validate()
 		if err != nil {
 			return fmt.Errorf("error validating generated NetworkPolicy for %s: %s", ip, err), nil
