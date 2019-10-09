@@ -33,6 +33,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
 )
@@ -383,15 +384,47 @@ func updateStatusByCapabilities(client clientset.Interface, capabilities k8svers
 			_, err = client.CiliumV2().CiliumNetworkPolicies(ns).Patch(name, k8sTypes.JSONPatchType, createStatusAndNodePatchJSON, "status")
 		}
 	case capabilities.UpdateStatus:
+		// Get the CNP from K8s so we can update its status. This case occurs
+		// when cilium-operator is updating the CNP and all it has is the
+		// CNP NodeStatus from the key-value store, but not the CNP itself.
+		if cnp == nil {
+			var cnpGetError error
+			cnp, cnpGetError = getSlimCNP(client, ns, name)
+			if cnpGetError != nil {
+				return cnpGetError
+			}
+		}
 		// k8s < 1.13 as minimal support for JSON patch where kube-apiserver
 		// can print Error messages and even panic in k8s < 1.10.
 		cnp.SetPolicyStatus(nodeName, cnpns)
 		_, err = client.CiliumV2().CiliumNetworkPolicies(ns).UpdateStatus(cnp.CiliumNetworkPolicy)
 	default:
+		// Get the CNP from K8s so we can update its status. This case occurs
+		// when cilium-operator is updating the CNP and all it has is the
+		// CNP NodeStatus from the key-value store, but not the CNP itself.
+		if cnp == nil {
+			var cnpGetError error
+			cnp, cnpGetError = getSlimCNP(client, ns, name)
+			if cnpGetError != nil {
+				return cnpGetError
+			}
+		}
 		// k8s < 1.13 as minimal support for JSON patch where kube-apiserver
 		// can print Error messages and even panic in k8s < 1.10.
 		cnp.SetPolicyStatus(nodeName, cnpns)
 		_, err = client.CiliumV2().CiliumNetworkPolicies(ns).Update(cnp.CiliumNetworkPolicy)
 	}
 	return err
+}
+
+func getSlimCNP(client clientset.Interface, ns, name string) (*types.SlimCNP, error) {
+	cnpNonSlim, cnpGetErr := client.CiliumV2().CiliumNetworkPolicies(ns).Get(name, metav1.GetOptions{})
+	if cnpGetErr != nil {
+		return nil, cnpGetErr
+	}
+	cnp := CopyObjToV2CNP(cnpNonSlim)
+	if cnp == nil {
+		return nil, fmt.Errorf("copying CNP to slim CNP failed for CNP %s/%s", ns, name)
+	}
+	return cnp, nil
 }
