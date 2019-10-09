@@ -336,6 +336,7 @@ func (d *Daemon) initRestore(restoredEndpoints *endpointRestoreState) chan struc
 				controller.NewManager().UpdateController("sync-lb-maps-with-k8s-services",
 					controller.ControllerParams{
 						DoFunc: func(ctx context.Context) error {
+							d.svcBootstrapPhaseWG.Wait()
 							return d.svc.SyncWithK8sFinished()
 						},
 					},

@@ -172,6 +172,16 @@ type Daemon struct {
 	iptablesManager rulesManager
 
 	endpointManager *endpointmanager.EndpointManager
+
+	// svcBootstrapPhase marks whether a period when SVC-related k8s resources
+	// are being synchronized from kube-apiserver to the cache informer is on.
+	// int32 instead of bool as the value is accessed via sync/atomic, and the
+	// latter doesn't support bool types.
+	svcBootstrapPhase int32
+	// svcBootstrapPhaseWG is a waitgroup to wait until the SVC-related k8s
+	// resources have been consumed by d.k8sServiceHandler() during the bootstrap
+	// phase
+	svcBootstrapPhaseWG sync.WaitGroup
 }
 
 // GetPolicyRepository returns the policy repository of the daemon
@@ -352,6 +362,7 @@ func NewDaemon(dp datapath.Datapath, iptablesManager rulesManager) (*Daemon, *en
 		nodeDiscovery:     nodediscovery.NewNodeDiscovery(nodeMngr, mtuConfig),
 		iptablesManager:   iptablesManager,
 		endpointManager:   epMgr,
+		svcBootstrapPhase: 1, // SVC bootstrapping is on
 	}
 	bootstrapStats.daemonInit.End(true)
 
