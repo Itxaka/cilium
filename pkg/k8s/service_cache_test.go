@@ -127,7 +127,8 @@ func (s *K8sSuite) TestServiceCache(c *check.C) {
 		},
 	}
 
-	svcID := svcCache.UpdateService(k8sSvc)
+	svcID, sent := svcCache.UpdateService(k8sSvc)
+	c.Assert(sent, check.Equals, false)
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -158,7 +159,8 @@ func (s *K8sSuite) TestServiceCache(c *check.C) {
 		},
 	}
 
-	svcCache.UpdateEndpoints(k8sEndpoints)
+	_, _, sent = svcCache.UpdateEndpoints(k8sEndpoints)
+	c.Assert(sent, check.Equals, true)
 
 	// The service should be ready as both service and endpoints have been
 	// imported
@@ -173,8 +175,10 @@ func (s *K8sSuite) TestServiceCache(c *check.C) {
 	c.Assert(ready, check.Equals, true)
 	c.Assert(endpoints.String(), check.Equals, "2.2.2.2:8080/TCP")
 
-	// Updating the service without chaning it should not result in an event
-	svcCache.UpdateService(k8sSvc)
+	// Updating the service without changing it should not result in an event
+	_, sent = svcCache.UpdateService(k8sSvc)
+	c.Assert(sent, check.Equals, false)
+
 	time.Sleep(100 * time.Millisecond)
 	select {
 	case <-svcCache.Events:
@@ -183,7 +187,8 @@ func (s *K8sSuite) TestServiceCache(c *check.C) {
 	}
 
 	// Deleting the service will result in a service delete event
-	svcCache.DeleteService(k8sSvc)
+	sent = svcCache.DeleteService(k8sSvc)
+	c.Assert(sent, check.Equals, true)
 	c.Assert(testutils.WaitUntil(func() bool {
 		event := <-svcCache.Events
 		c.Assert(event.Action, check.Equals, DeleteService)
@@ -192,7 +197,8 @@ func (s *K8sSuite) TestServiceCache(c *check.C) {
 	}, 2*time.Second), check.IsNil)
 
 	// Reinserting the service should re-match with the still existing endpoints
-	svcCache.UpdateService(k8sSvc)
+	_, sent = svcCache.UpdateService(k8sSvc)
+	c.Assert(sent, check.Equals, true)
 	c.Assert(testutils.WaitUntil(func() bool {
 		event := <-svcCache.Events
 		c.Assert(event.Action, check.Equals, UpdateService)
@@ -201,7 +207,8 @@ func (s *K8sSuite) TestServiceCache(c *check.C) {
 	}, 2*time.Second), check.IsNil)
 
 	// Deleting the endpoints will result in a service delete event
-	svcCache.DeleteEndpoints(k8sEndpoints)
+	_, sent = svcCache.DeleteEndpoints(k8sEndpoints)
+	c.Assert(sent, check.Equals, true)
 	c.Assert(testutils.WaitUntil(func() bool {
 		event := <-svcCache.Events
 		c.Assert(event.Action, check.Equals, DeleteService)
@@ -214,7 +221,8 @@ func (s *K8sSuite) TestServiceCache(c *check.C) {
 	c.Assert(endpoints.String(), check.Equals, "")
 
 	// Reinserting the endpoints should re-match with the still existing service
-	svcCache.UpdateEndpoints(k8sEndpoints)
+	_, _, sent = svcCache.UpdateEndpoints(k8sEndpoints)
+	c.Assert(sent, check.Equals, true)
 	c.Assert(testutils.WaitUntil(func() bool {
 		event := <-svcCache.Events
 		c.Assert(event.Action, check.Equals, UpdateService)
@@ -237,7 +245,8 @@ func (s *K8sSuite) TestServiceCache(c *check.C) {
 
 	// Deleting the endpoints will not emit an event as the notification
 	// was sent out when the service was deleted.
-	svcCache.DeleteEndpoints(k8sEndpoints)
+	_, sent = svcCache.DeleteEndpoints(k8sEndpoints)
+	c.Assert(sent, check.Equals, false)
 	time.Sleep(100 * time.Millisecond)
 	select {
 	case <-svcCache.Events:
@@ -277,7 +286,8 @@ func (s *K8sSuite) TestServiceMerging(c *check.C) {
 		},
 	}
 
-	svcID := svcCache.UpdateService(k8sSvc)
+	svcID, sent := svcCache.UpdateService(k8sSvc)
+	c.Assert(sent, check.Equals, false)
 
 	k8sEndpoints := &types.Endpoints{
 		Endpoints: &v1.Endpoints{
@@ -300,7 +310,8 @@ func (s *K8sSuite) TestServiceMerging(c *check.C) {
 		},
 	}
 
-	svcCache.UpdateEndpoints(k8sEndpoints)
+	_, _, sent = svcCache.UpdateEndpoints(k8sEndpoints)
+	c.Assert(sent, check.Equals, true)
 
 	// The service should be ready as both service and endpoints have been
 	// imported
@@ -389,7 +400,7 @@ func (s *K8sSuite) TestServiceMerging(c *check.C) {
 	}
 
 	// Adding the service later must trigger an update
-	svcID2 := svcCache.UpdateService(&types.Service{
+	svcID2, sent := svcCache.UpdateService(&types.Service{
 		Service: &v1.Service{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "foo2",
@@ -410,6 +421,7 @@ func (s *K8sSuite) TestServiceMerging(c *check.C) {
 			},
 		},
 	})
+	c.Assert(sent, check.Equals, true)
 
 	c.Assert(testutils.WaitUntil(func() bool {
 		event := <-svcCache.Events
@@ -454,7 +466,8 @@ func (s *K8sSuite) TestServiceMerging(c *check.C) {
 	}, 2*time.Second), check.IsNil)
 
 	// Deletion of the service frontend will trigger the delete notification
-	svcCache.DeleteService(k8sSvc)
+	sent = svcCache.DeleteService(k8sSvc)
+	c.Assert(sent, check.Equals, true)
 	c.Assert(testutils.WaitUntil(func() bool {
 		event := <-svcCache.Events
 		c.Assert(event.Action, check.Equals, DeleteService)

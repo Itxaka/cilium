@@ -105,13 +105,12 @@ func (s *ServiceCache) GetRandomBackendIP(svcID ServiceID) *loadbalancer.L3n4Add
 }
 
 // UpdateService parses a Kubernetes service and adds or updates it in the
-// ServiceCache. Returns the ServiceID unless the Kubernetes service could not
-// be parsed and a bool to indicate whether the service was changed in the
-// cache or not.
-func (s *ServiceCache) UpdateService(k8sSvc *types.Service) ServiceID {
+// ServiceCache. Returns the ServiceID and a bool to indicate whether
+// the UpdateService event was sent.
+func (s *ServiceCache) UpdateService(k8sSvc *types.Service) (ServiceID, bool) {
 	svcID, newService := ParseService(k8sSvc)
 	if newService == nil {
-		return svcID
+		return svcID, false
 	}
 
 	s.mutex.Lock()
@@ -119,7 +118,7 @@ func (s *ServiceCache) UpdateService(k8sSvc *types.Service) ServiceID {
 
 	if oldService, ok := s.services[svcID]; ok {
 		if oldService.DeepEquals(newService) {
-			return svcID
+			return svcID, false
 		}
 	}
 
@@ -127,6 +126,7 @@ func (s *ServiceCache) UpdateService(k8sSvc *types.Service) ServiceID {
 
 	// Check if the corresponding Endpoints resource is already available
 	endpoints, serviceReady := s.correlateEndpoints(svcID)
+	sent := false
 	if serviceReady {
 		s.Events <- ServiceEvent{
 			Action:    UpdateService,
@@ -134,14 +134,16 @@ func (s *ServiceCache) UpdateService(k8sSvc *types.Service) ServiceID {
 			Service:   newService,
 			Endpoints: endpoints,
 		}
+		sent = true
 	}
 
-	return svcID
+	return svcID, sent
 }
 
 // DeleteService parses a Kubernetes service and removes it from the
-// ServiceCache
-func (s *ServiceCache) DeleteService(k8sSvc *types.Service) {
+// ServiceCache. Returns bool to indicate whether the DeleteService
+// event was sent.
+func (s *ServiceCache) DeleteService(k8sSvc *types.Service) bool {
 	svcID := ParseServiceID(k8sSvc)
 
 	s.mutex.Lock()
@@ -151,6 +153,7 @@ func (s *ServiceCache) DeleteService(k8sSvc *types.Service) {
 	endpoints, _ := s.correlateEndpoints(svcID)
 	delete(s.services, svcID)
 
+	sent := false
 	if serviceOK {
 		s.Events <- ServiceEvent{
 			Action:    DeleteService,
@@ -158,14 +161,17 @@ func (s *ServiceCache) DeleteService(k8sSvc *types.Service) {
 			Service:   oldService,
 			Endpoints: endpoints,
 		}
+		sent = true
 	}
+	return sent
 }
 
 // UpdateEndpoints parses a Kubernetes endpoints and adds or updates it in the
-// ServiceCache. Returns the ServiceID unless the Kubernetes endpoints could not
-// be parsed and a bool to indicate whether the endpoints was changed in the
-// cache or not.
-func (s *ServiceCache) UpdateEndpoints(k8sEndpoints *types.Endpoints) (ServiceID, *Endpoints) {
+// ServiceCache. Returns the ServiceID, endpoints and a bool to indicate whether
+// the UpdateService event was sent.
+func (s *ServiceCache) UpdateEndpoints(k8sEndpoints *types.Endpoints) (
+	ServiceID, *Endpoints, bool) {
+
 	svcID, newEndpoints := ParseEndpoints(k8sEndpoints)
 
 	s.mutex.Lock()
@@ -173,7 +179,7 @@ func (s *ServiceCache) UpdateEndpoints(k8sEndpoints *types.Endpoints) (ServiceID
 
 	if oldEndpoints, ok := s.endpoints[svcID]; ok {
 		if oldEndpoints.DeepEquals(newEndpoints) {
-			return svcID, newEndpoints
+			return svcID, newEndpoints, false
 		}
 	}
 
@@ -182,6 +188,7 @@ func (s *ServiceCache) UpdateEndpoints(k8sEndpoints *types.Endpoints) (ServiceID
 	// Check if the corresponding Endpoints resource is already available
 	service, ok := s.services[svcID]
 	endpoints, serviceReady := s.correlateEndpoints(svcID)
+	sent := false
 	if ok && serviceReady {
 		s.Events <- ServiceEvent{
 			Action:    UpdateService,
@@ -189,14 +196,16 @@ func (s *ServiceCache) UpdateEndpoints(k8sEndpoints *types.Endpoints) (ServiceID
 			Service:   service,
 			Endpoints: endpoints,
 		}
+		sent = true
 	}
 
-	return svcID, newEndpoints
+	return svcID, newEndpoints, sent
 }
 
 // DeleteEndpoints parses a Kubernetes endpoints and removes it from the
-// ServiceCache
-func (s *ServiceCache) DeleteEndpoints(k8sEndpoints *types.Endpoints) ServiceID {
+// ServiceCache. Returns the ServiceID of the deleted service and a bool
+// to indicate whether the DeleteService event was sent.
+func (s *ServiceCache) DeleteEndpoints(k8sEndpoints *types.Endpoints) (ServiceID, bool) {
 	svcID := ParseEndpointsID(k8sEndpoints)
 
 	s.mutex.Lock()
@@ -206,6 +215,7 @@ func (s *ServiceCache) DeleteEndpoints(k8sEndpoints *types.Endpoints) ServiceID 
 	delete(s.endpoints, svcID)
 	endpoints, serviceReady := s.correlateEndpoints(svcID)
 
+	sent := false
 	if serviceOK {
 		event := ServiceEvent{
 			Action:    DeleteService,
@@ -219,9 +229,10 @@ func (s *ServiceCache) DeleteEndpoints(k8sEndpoints *types.Endpoints) ServiceID 
 		}
 
 		s.Events <- event
+		sent = true
 	}
 
-	return svcID
+	return svcID, sent
 }
 
 // FrontendList is the list of all k8s service frontends

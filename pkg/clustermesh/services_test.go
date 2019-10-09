@@ -149,7 +149,7 @@ func (s *ClusterMeshServicesTestSuite) TestClusterMeshServicesGlobal(c *C) {
 		},
 	}
 
-	svcID := s.svcCache.UpdateService(k8sSvc)
+	svcID, _ := s.svcCache.UpdateService(k8sSvc)
 
 	s.expectEvent(c, k8s.UpdateService, svcID, func(event k8s.ServiceEvent) bool {
 		return event.Endpoints.Backends["10.0.185.196"] != nil &&
@@ -214,7 +214,7 @@ func (s *ClusterMeshServicesTestSuite) TestClusterMeshServicesUpdate(c *C) {
 		},
 	}
 
-	svcID := s.svcCache.UpdateService(k8sSvc)
+	svcID, _ := s.svcCache.UpdateService(k8sSvc)
 
 	s.expectEvent(c, k8s.UpdateService, svcID, func(event k8s.ServiceEvent) bool {
 		return event.Endpoints.Backends["10.0.185.196"]["http"].Equals(
